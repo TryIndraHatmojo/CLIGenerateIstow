@@ -1,0 +1,47 @@
+name: build-and-test
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  qt:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: linux_gcc_64
+          - os: windows-2022
+            arch: win64_msvc2022_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.1'
+          arch: ${{ matrix.arch }}
+          cache: true
+      - name: Configure
+        run: cmake -S . -B build-ci -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build-ci --config Release --parallel 4
+      - name: Test without display
+        run: ctest --test-dir build-ci -C Release --output-on-failure
+      - uses: actions/upload-artifact@v4
+        with:
+          name: istow-cli-${{ matrix.os }}
+          path: |
+            build-ci/istow-cli
+            build-ci/Release/istow-cli.exe
+  laravel:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: sqlite3, pdo_sqlite
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist
+        working-directory: examples/laravel
+      - run: composer test
+        working-directory: examples/laravel

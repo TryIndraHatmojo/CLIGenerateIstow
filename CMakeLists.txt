@@ -1,0 +1,45 @@
+cmake_minimum_required(VERSION 3.24)
+project(istow-cli VERSION 0.1.0 LANGUAGES C CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Core Sql)
+find_package(ZLIB QUIET)
+if(NOT ZLIB_FOUND)
+    include(FetchContent)
+    set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(zlib
+        URL https://zlib.net/fossils/zlib-1.3.1.tar.gz
+        URL_HASH SHA256=9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    FetchContent_MakeAvailable(zlib)
+    add_library(ZLIB::ZLIB ALIAS zlibstatic)
+endif()
+add_library(istow_archive STATIC
+    src/application/ExportService.cpp
+    src/archive/LegacyArchiveReader.cpp src/archive/LegacyArchiveWriter.cpp
+    src/database/ShipDatabaseValidator.cpp src/database/ShipMetadataReader.cpp
+    src/filesystem/PathValidator.cpp)
+target_include_directories(istow_archive PUBLIC src)
+target_link_libraries(istow_archive PUBLIC Qt6::Core Qt6::Sql PRIVATE ZLIB::ZLIB)
+qt_add_resources(istow_archive profiles PREFIX "/" FILES profiles/ship-configure-schema.json)
+add_executable(istow-cli src/main.cpp src/cli/CommandRouter.cpp src/cli/JsonResponse.cpp)
+target_link_libraries(istow-cli PRIVATE istow_archive)
+target_compile_definitions(istow-cli PRIVATE ISTOW_VERSION="${PROJECT_VERSION}")
+if(MSVC)
+    target_compile_options(istow_archive PRIVATE /W4)
+else()
+    target_compile_options(istow_archive PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+include(CTest)
+if(BUILD_TESTING)
+    find_package(Qt6 REQUIRED COMPONENTS Test)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_executable(archive-tests tests/unit/ArchiveTests.cpp)
+    target_link_libraries(archive-tests PRIVATE istow_archive Qt6::Test)
+    add_test(NAME archive-unit COMMAND archive-tests)
+    add_test(NAME cli-integration COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_SOURCE_DIR}/tests/integration/test_cli.py $<TARGET_FILE:istow-cli>)
+endif()
+include(GNUInstallDirs)
+install(TARGETS istow-cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
